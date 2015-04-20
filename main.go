@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	//"io/ioutil"
+	"io/ioutil"
 	"log"
 	"mime"
 	"mime/multipart"
 	"net/http"
+  "net/textproto"
 	"strconv"
 	"sync"
 
@@ -50,6 +51,7 @@ func ProcessBatch(requests []*http.Request) ([]*http.Response, error) {
 			if err != nil {
 				// Create an error response for any HTTP Client errors - Status 400 (Bad Request)
 				errorResponse := http.Response{}
+        errorResponse.Proto = r.Request.Proto
 				errorResponse.StatusCode = http.StatusBadRequest
 				errorResponse.Status = strconv.Itoa(http.StatusBadRequest) + " " + err.Error()
 				batchedResponses <- BatchedResponse{r.Sequence, &errorResponse}
@@ -117,14 +119,36 @@ func MultipartMixed(c web.C, w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal("TODO return error status code and error detail", err)
 	}
-	for _, next := range responses {
-		log.Println(next.Status)
-		//defer next.Body.Close()
 
-		//log.Println("response Status:", next.Status)
-		//log.Println("response Headers:", next.Header)
-		//body, _ := ioutil.ReadAll(next.Body)
-		//log.Println("response Body:", string(body))
+  mw := multipart.NewWriter(w)
+  defer mw.Close()
+  w.Header().Set("Content-Type", "multipart/mixed; boundary=" + mw.Boundary())
+
+  var pw io.Writer
+  var pb []byte
+
+	for _, next := range responses {
+    //pw, err = mw.CreatePart(textproto.MIMEHeader(next.Header))
+    ph := make(textproto.MIMEHeader)
+    ph.Set("Content-Type", "application/http")
+    pw, err = mw.CreatePart(ph)
+    if err != nil {
+      log.Fatal("TODO return error status code and error detail", err)
+    }
+    io.WriteString(pw,next.Proto + " " + next.Status + "\n")
+    if next.Header != nil {
+      log.Println(next.Header)
+      next.Header.Write(pw)
+      io.WriteString(pw,"\n")
+    }
+    if next.Body != nil {
+      pb, err = ioutil.ReadAll(next.Body)
+      if err != nil {
+        log.Fatal("TODO return error status code and error detail", err)
+      }
+      pw.Write(pb)
+      io.WriteString(pw,"\n")
+    }
 	}
 }
 
