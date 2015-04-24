@@ -1,7 +1,8 @@
-package main
+package batchproxy
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -9,12 +10,9 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
-  "net/textproto"
+	"net/textproto"
 	"strconv"
 	"sync"
-
-	"github.com/zenazn/goji"
-	"github.com/zenazn/goji/web"
 )
 
 type BatchedRequest struct {
@@ -51,7 +49,7 @@ func ProcessBatch(requests []*http.Request) ([]*http.Response, error) {
 			if err != nil {
 				// Create an error response for any HTTP Client errors - Status 400 (Bad Request)
 				errorResponse := http.Response{}
-        errorResponse.Proto = r.Request.Proto
+				errorResponse.Proto = r.Request.Proto
 				errorResponse.StatusCode = http.StatusBadRequest
 				errorResponse.Status = strconv.Itoa(http.StatusBadRequest) + " " + err.Error()
 				batchedResponses <- BatchedResponse{r.Sequence, &errorResponse}
@@ -79,15 +77,23 @@ func ProcessBatch(requests []*http.Request) ([]*http.Response, error) {
 	}
 }
 
-func MultipartMixed(c web.C, w http.ResponseWriter, r *http.Request) {
+func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	var batch []*http.Request
 	ct, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || ct != "multipart/mixed" {
-		log.Fatal("TODO return error status code invalid content type - multipart/mixed instead")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if ct != "multipart/mixed" {
+		err = errors.New("unsupported content type, expected multipart/mixed")
+		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+		return
 	}
 	boundary, ok := params["boundary"]
 	if !ok {
-		log.Fatal("TODO return error status code missing multipart boundary instead")
+		err = errors.New("missing multipart boundary")
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	mr := multipart.NewReader(r.Body, boundary)
 	for {
@@ -96,64 +102,64 @@ func MultipartMixed(c web.C, w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err != nil {
-			log.Fatal("TODO return error status code and error detail", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		pct, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
-		if err != nil || pct != "application/http" {
-			log.Fatal("TODO return error status code invalid multipart content")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		if pct != "application/http" {
+			err = errors.New("unsupported content type for multipart/mixed content, expected each part to be application/http")
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 		r, err := http.ReadRequest(bufio.NewReader(p))
 		// We need to get the protocol from a header in the part's request
 		protocol := r.Header.Get("X-Forwarded-Proto")
 		if protocol == "" {
-			log.Fatal("TODO return error status code missing X-Forwarded-Proto header")
+			err = errors.New("missing header in multipart/mixed content, expected each part to contain an X-Forwarded-Proto header")
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 		url := protocol + "://" + r.Host + r.RequestURI
 		request, err := http.NewRequest(r.Method, url, r.Body)
 		if err != nil {
-			log.Fatal("TODO return error status code and error detail", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		batch = append(batch, request)
 	}
 	responses, err := ProcessBatch(batch)
 	if err != nil {
-		log.Fatal("TODO return error status code and error detail", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-  mw := multipart.NewWriter(w)
-  defer mw.Close()
-  w.Header().Set("Content-Type", "multipart/mixed; boundary=" + mw.Boundary())
+	mw := multipart.NewWriter(w)
+	defer mw.Close()
+	w.Header().Set("Content-Type", "multipart/mixed; boundary="+mw.Boundary())
 
-  var pw io.Writer
-  var pb []byte
+	var pw io.Writer
+	var pb []byte
 
 	for _, next := range responses {
-    //pw, err = mw.CreatePart(textproto.MIMEHeader(next.Header))
-    ph := make(textproto.MIMEHeader)
-    ph.Set("Content-Type", "application/http")
-    pw, err = mw.CreatePart(ph)
-    if err != nil {
-      log.Fatal("TODO return error status code and error detail", err)
-    }
-    io.WriteString(pw,next.Proto + " " + next.Status + "\n")
-    if next.Header != nil {
-      log.Println(next.Header)
-      next.Header.Write(pw)
-      io.WriteString(pw,"\n")
-    }
-    if next.Body != nil {
-      pb, err = ioutil.ReadAll(next.Body)
-      if err != nil {
-        log.Fatal("TODO return error status code and error detail", err)
-      }
-      pw.Write(pb)
-      io.WriteString(pw,"\n")
-    }
+		ph := make(textproto.MIMEHeader)
+		ph.Set("Content-Type", "application/http")
+		pw, err = mw.CreatePart(ph)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		io.WriteString(pw, next.Proto+" "+next.Status+"\n")
+		if next.Header != nil {
+			log.Println(next.Header)
+			next.Header.Write(pw)
+			io.WriteString(pw, "\n")
+		}
+		if next.Body != nil {
+			pb, err = ioutil.ReadAll(next.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			pw.Write(pb)
+			io.WriteString(pw, "\n")
+		}
 	}
-}
-
-func main() {
-	goji.Post("/multipart/mixed", MultipartMixed)
-	// TODO support other batch requests e.g. AJAX support?
-	goji.Serve()
 }
