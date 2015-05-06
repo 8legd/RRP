@@ -10,8 +10,10 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/http/httputil"
 	"net/textproto"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -115,17 +117,21 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		}
 		r, err := http.ReadRequest(bufio.NewReader(p))
 		// We need to get the protocol from a header in the part's request
-		protocol := r.Header.Get("X-Forwarded-Proto")
-		if protocol == "" {
-			err = errors.New("missing header in multipart/mixed content, expected each part to contain an X-Forwarded-Proto header")
+		protocol := r.Header.Get("Forwarded")
+		if protocol == "" || !strings.Contains(protocol,"proto=") {
+			err = errors.New("missing header in multipart/mixed content, expected each part to contain a Forwarded header with proto value")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		} else {
+			// TODO split on space then = to read `proto` independantly of any other name value pairs
+			protocol = strings.Replace(protocol,"proto=","",1)
 		}
 		url := protocol + "://" + r.Host + r.RequestURI
 		request, err := http.NewRequest(r.Method, url, r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
+		// TODO optionally add timeout - read from x-batchproxy-timeout
 		batch = append(batch, request)
 	}
 	responses, err := ProcessBatch(batch)
@@ -161,5 +167,14 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			pw.Write(pb)
 			io.WriteString(pw, "\n")
 		}
+	}
+}
+
+func Debug(w http.ResponseWriter, r *http.Request) {
+	dump, err := httputil.DumpRequest(r, true)
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		log.Print(string(dump))
 	}
 }
