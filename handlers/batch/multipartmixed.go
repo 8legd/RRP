@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
+	"log"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -19,11 +20,13 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	var batch []*http.Request
 	ct, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil {
+		log.Println(err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if ct != "multipart/mixed" {
 		err = errors.New("unsupported content type, expected multipart/mixed")
+		log.Println(err)
 		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
 		return
 	}
@@ -34,6 +37,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	if tm != "" {
 		timeout, err = time.ParseDuration(tm + "s")
 		if err != nil {
+			log.Println(err)
 			http.Error(w, "invalid value for x-batchproxy-timeout header, expected number of seconds", http.StatusBadRequest)
 			return
 		}
@@ -43,6 +47,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	boundary, ok := params["boundary"]
 	if !ok {
 		err = errors.New("missing multipart boundary")
+		log.Println(err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -52,22 +57,26 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		if err == io.EOF {
 			if p == nil {
 				err = errors.New("invalid multipart content")
+				log.Println(err)
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			break
 		}
 		if err != nil {
+			log.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		pct, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
 		if err != nil {
+			log.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if pct != "application/http" {
 			err = errors.New("unsupported content type for multipart/mixed content, expected each part to be application/http")
+			log.Println(err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -76,12 +85,14 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		protocol := r.Header.Get("Forwarded")
 		if protocol == "" || !strings.Contains(protocol, "proto=http") { // proto must be `http` or `https`
 			err = errors.New("missing header in multipart/mixed content, expected each part to contain a Forwarded header with a valid proto value (proto=http or proto=https)")
+			log.Println(err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		parts := strings.Split(protocol, "proto=")
 		if len(parts) < 2 || (parts[1] != "http" && parts[1] != "https") {
 			err = errors.New("invalid proto value in Forwarded header, expected proto=http or proto=https")
+			log.Println(err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -89,12 +100,14 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		url := protocol + "://" + r.Host + r.RequestURI
 		request, err := http.NewRequest(r.Method, url, r.Body)
 		if err != nil {
+			log.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		batch = append(batch, request)
 	}
 	responses, err := processors.ProcessBatch(batch, timeout)
 	if err != nil {
+		log.Println(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
@@ -110,6 +123,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		ph.Set("Content-Type", "application/http")
 		pw, err = mw.CreatePart(ph)
 		if err != nil {
+			log.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		io.WriteString(pw, next.Proto+" "+next.Status+"\n")
@@ -120,6 +134,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		if next.Body != nil {
 			pb, err = ioutil.ReadAll(next.Body)
 			if err != nil {
+				log.Println(err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 			pw.Write(pb)
