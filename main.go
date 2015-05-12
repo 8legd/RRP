@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/8legd/batchproxy"
-
 	"github.com/zenazn/goji"
 	"github.com/zenazn/goji/web/middleware"
+
+	"github.com/8legd/RRP/handlers/batch"
 )
 
 func main() {
@@ -18,8 +18,8 @@ func main() {
 	// Remove any other unnecessary default middleware
 	goji.DefaultMux.Abandon(middleware.RequestID)
 
-	goji.Post("/multipart/mixed", batchproxy.MultipartMixed)
-	goji.Post("/debug", batchproxy.DumpRequest)
+	goji.Post("/batch/multipartmixed", batch.MultipartMixed)
+	goji.Post("/batch/debug", batch.Debug)
 
 	// TODO support other batch requests e.g. AJAX support?
 
