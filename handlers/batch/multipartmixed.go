@@ -55,7 +55,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	for {
 		p, err := mr.NextPart()
 		if err == io.EOF {
-			if p == nil {
+			if len(batch) < 1 {
 				err = errors.New("invalid multipart content")
 				log.Println(err)
 				http.Error(w, err.Error(), http.StatusBadRequest)
