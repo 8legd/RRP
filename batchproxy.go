@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type BatchedRequest struct {
@@ -27,7 +28,7 @@ type BatchedResponse struct {
 	Response *http.Response
 }
 
-func ProcessBatch(requests []*http.Request) ([]*http.Response, error) {
+func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Response, error) {
 	z := len(requests)
 	// Setup a buffered channel to queue up the requests for processing by individual HTTP Client goroutines
 	batchedRequests := make(chan BatchedRequest, z)
@@ -46,7 +47,7 @@ func ProcessBatch(requests []*http.Request) ([]*http.Response, error) {
 		go func() {
 			defer wg.Done()
 			r := <-batchedRequests
-			client := &http.Client{}
+			client := &http.Client{Timeout: timeout}
 			response, err := client.Do(r.Request)
 			if err != nil {
 				// Create an error response for any HTTP Client errors - Status 400 (Bad Request)
@@ -73,10 +74,9 @@ func ProcessBatch(requests []*http.Request) ([]*http.Response, error) {
 			result[r.Sequence] = r.Response
 		}
 		return result, nil
-	} else {
-		err := fmt.Errorf("expected %d responses for this batch but only recieved %d", z, len(batchedResponses))
-		return nil, err
 	}
+	err := fmt.Errorf("expected %d responses for this batch but only recieved %d", z, len(batchedResponses))
+	return nil, err
 }
 
 func MultipartMixed(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +91,20 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
 		return
 	}
+	// check for optional timeout header
+
+	tm := r.Header.Get("x-batchproxy-timeout")
+	var timeout time.Duration
+	if tm != "" {
+		timeout, err = time.ParseDuration(tm + "s")
+		if err != nil {
+			http.Error(w, "invalid value for x-batchproxy-timeout header, expected number of seconds", http.StatusBadRequest)
+			return
+		}
+	} else {
+		timeout = time.Duration(20) * time.Second // Default timeout is 20 seconds
+	}
+	log.Println(timeout)
 	boundary, ok := params["boundary"]
 	if !ok {
 		err = errors.New("missing multipart boundary")
@@ -118,23 +132,26 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		r, err := http.ReadRequest(bufio.NewReader(p))
 		// We need to get the protocol from a header in the part's request
 		protocol := r.Header.Get("Forwarded")
-		if protocol == "" || !strings.Contains(protocol,"proto=") {
-			err = errors.New("missing header in multipart/mixed content, expected each part to contain a Forwarded header with proto value")
+		if protocol == "" || !strings.Contains(protocol, "proto=http") { // proto must be `http` or `https`
+			err = errors.New("missing header in multipart/mixed content, expected each part to contain a Forwarded header with a valid proto value (proto=http or proto=https)")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
-		} else {
-			// TODO split on space then = to read `proto` independantly of any other name value pairs
-			protocol = strings.Replace(protocol,"proto=","",1)
 		}
+		parts := strings.Split(protocol, "proto=")
+		if len(parts) < 2 || (parts[1] != "http" && parts[1] != "https") {
+			err = errors.New("invalid proto value in Forwarded header, expected proto=http or proto=https")
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		protocol = parts[1]
 		url := protocol + "://" + r.Host + r.RequestURI
 		request, err := http.NewRequest(r.Method, url, r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-		// TODO optionally add timeout - read from x-batchproxy-timeout
 		batch = append(batch, request)
 	}
-	responses, err := ProcessBatch(batch)
+	responses, err := ProcessBatch(batch, timeout)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -170,11 +187,13 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func Debug(w http.ResponseWriter, r *http.Request) {
+func DumpRequest(w http.ResponseWriter, r *http.Request) {
 	dump, err := httputil.DumpRequest(r, true)
 	if err != nil {
 		log.Fatal(err)
 	} else {
+		log.Print("<-- DumpRequest -->")
 		log.Print(string(dump))
+		log.Print("<-- /DumpRequest -->")
 	}
 }
