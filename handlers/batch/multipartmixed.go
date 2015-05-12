@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
-	"log"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -41,7 +40,6 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	} else {
 		timeout = time.Duration(20) * time.Second // Default timeout is 20 seconds
 	}
-	log.Println(timeout)
 	boundary, ok := params["boundary"]
 	if !ok {
 		err = errors.New("missing multipart boundary")
@@ -52,14 +50,21 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	for {
 		p, err := mr.NextPart()
 		if err == io.EOF {
+			if p == nil {
+				err = errors.New("invalid multipart content")
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			break
 		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		pct, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		if pct != "application/http" {
 			err = errors.New("unsupported content type for multipart/mixed content, expected each part to be application/http")
@@ -109,7 +114,6 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		}
 		io.WriteString(pw, next.Proto+" "+next.Status+"\n")
 		if next.Header != nil {
-			log.Println(next.Header)
 			next.Header.Write(pw)
 			io.WriteString(pw, "\n")
 		}
