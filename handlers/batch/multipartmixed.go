@@ -103,6 +103,8 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			log.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
+		// add headers TODO check this works
+		request.Header = r.Header
 		batch = append(batch, request)
 	}
 	responses, err := processors.ProcessBatch(batch, timeout)
