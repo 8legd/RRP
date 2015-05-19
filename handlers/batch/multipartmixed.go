@@ -2,6 +2,7 @@ package batch
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"io"
 	"io/ioutil"
@@ -31,7 +32,6 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// check for optional timeout header
-
 	tm := r.Header.Get("x-batchproxy-timeout")
 	var timeout time.Duration
 	if tm != "" {
@@ -80,9 +80,9 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		r, err := http.ReadRequest(bufio.NewReader(p))
+		pr, err := http.ReadRequest(bufio.NewReader(p))
 		// We need to get the protocol from a header in the part's request
-		protocol := r.Header.Get("Forwarded")
+		protocol := pr.Header.Get("Forwarded")
 		if protocol == "" || !strings.Contains(protocol, "proto=http") { // proto must be `http` or `https`
 			err = errors.New("missing header in multipart/mixed content, expected each part to contain a Forwarded header with a valid proto value (proto=http or proto=https)")
 			log.Println(err)
@@ -97,14 +97,22 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		protocol = parts[1]
-		url := protocol + "://" + r.Host + r.RequestURI
-		request, err := http.NewRequest(r.Method, url, r.Body)
+		url := protocol + "://" + pr.Host + pr.RequestURI
+		// read part body
+		// NOTE: if there is no Content-Length header there will be no body
+		pb, err := ioutil.ReadAll(pr.Body)
+		if err != nil {
+			log.Println(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		request, err := http.NewRequest(r.Method, url, bytes.NewBuffer(pb))
 		if err != nil {
 			log.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-		// add headers TODO check this works
-		request.Header = r.Header
+		// add headers
+		request.Header = pr.Header
 		batch = append(batch, request)
 	}
 	responses, err := processors.ProcessBatch(batch, timeout)
