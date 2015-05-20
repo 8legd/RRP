@@ -61,13 +61,14 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			break
+			break // finished reading multpart parts
 		}
 		if err != nil {
 			log.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// check next part's contet type
 		pct, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
 		if err != nil {
 			log.Println(err)
@@ -81,7 +82,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		pr, err := http.ReadRequest(bufio.NewReader(p))
-		// We need to get the protocol from a header in the part's request
+		// we need to get the protocol from a header in the part's request
 		protocol := pr.Header.Get("Forwarded")
 		if protocol == "" || !strings.Contains(protocol, "proto=http") { // proto must be `http` or `https`
 			err = errors.New("missing header in multipart/mixed content, expected each part to contain a Forwarded header with a valid proto value (proto=http or proto=https)")
@@ -98,8 +99,8 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		}
 		protocol = parts[1]
 		url := protocol + "://" + pr.Host + pr.RequestURI
-		// read part body
-		// NOTE: if there is no Content-Length header there will be no body
+		// read part's body
+		// NOTE: if there is no Content-Length header the body will not have been read (will be empty)
 		pb, err := ioutil.ReadAll(pr.Body)
 		if err != nil {
 			log.Println(err)
@@ -121,6 +122,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
+	// send a multipart response back
 	mw := multipart.NewWriter(w)
 	defer mw.Close()
 	w.Header().Set("Content-Type", "multipart/mixed; boundary="+mw.Boundary())
@@ -128,6 +130,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	var pw io.Writer
 	var pb []byte
 
+	// the individual response are sent as `application/http` as per requests
 	for _, next := range responses {
 		ph := make(textproto.MIMEHeader)
 		ph.Set("Content-Type", "application/http")
