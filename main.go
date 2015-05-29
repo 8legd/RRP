@@ -4,6 +4,7 @@ import (
 	"github.com/zenazn/goji"
 	"github.com/zenazn/goji/web/middleware"
 
+	"github.com/8legd/RRP/handlers"
 	"github.com/8legd/RRP/handlers/batch"
 )
 
@@ -19,7 +20,7 @@ func main() {
 	goji.DefaultMux.Abandon(middleware.RequestID)
 
 	goji.Post("/batch/multipartmixed", batch.MultipartMixed)
-	goji.Post("/batch/debug", batch.Debug)
+	goji.Post("/batch/debug", handlers.Debug)
 
 	// TODO support other batch requests e.g. AJAX support?
 

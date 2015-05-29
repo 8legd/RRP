@@ -17,6 +17,10 @@ import (
 	"github.com/8legd/RRP/processors"
 )
 
+// MultipartMixed handles a batch of HTTP requests in `multipart/mixed` format.
+// Each part contains `application/http` content representing an individual request.
+// Once processed, HTTP responses are returned as `application/http` content in
+// the same sequence as the corresponding requests.
 func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	var batch []*http.Request
 	ct, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -139,10 +143,10 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			log.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-		io.WriteString(pw, next.Proto+" "+next.Status+"\n")
+		io.WriteString(pw, next.Proto+" "+next.Status+"\r\n")
 		if next.Header != nil {
 			next.Header.Write(pw)
-			io.WriteString(pw, "\n")
+			io.WriteString(pw, "\r\n")
 		}
 		if next.Body != nil {
 			pb, err = ioutil.ReadAll(next.Body)
@@ -151,7 +155,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 			pw.Write(pb)
-			io.WriteString(pw, "\n")
+			io.WriteString(pw, "\r\n")
 		}
 	}
 }

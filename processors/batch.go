@@ -8,27 +8,30 @@ import (
 	"time"
 )
 
-type BatchedRequest struct {
+type batchedRequest struct {
 	Sequence int
 	Request  *http.Request
 }
 
-type BatchedResponse struct {
+type batchedResponse struct {
 	Sequence int
 	Response *http.Response
 }
 
+// ProcessBatch sends a batch of HTTP requests using http.Client.
+// Each request is sent concurrently in a seperate goroutine.
+// The HTTP responses are returned in the same sequence as their corresponding requests.
 func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Response, error) {
 	z := len(requests)
 	// Setup a buffered channel to queue up the requests for processing by individual HTTP Client goroutines
-	batchedRequests := make(chan BatchedRequest, z)
+	batchedRequests := make(chan batchedRequest, z)
 	for i := 0; i < z; i++ {
-		batchedRequests <- BatchedRequest{i, requests[i]}
+		batchedRequests <- batchedRequest{i, requests[i]}
 	}
 	// Close the channel - nothing else is sent to it
 	close(batchedRequests)
 	// Setup a second buffered channel for collecting the BatchedResponses from the individual HTTP Client goroutines
-	batchedResponses := make(chan BatchedResponse, z)
+	batchedResponses := make(chan batchedResponse, z)
 	// Setup a wait group so we know when all the BatchedRequests have been processed
 	var wg sync.WaitGroup
 	wg.Add(z)
@@ -45,9 +48,9 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Resp
 				errorResponse.Proto = r.Request.Proto
 				errorResponse.StatusCode = http.StatusBadRequest
 				errorResponse.Status = strconv.Itoa(http.StatusBadRequest) + " " + err.Error()
-				batchedResponses <- BatchedResponse{r.Sequence, &errorResponse}
+				batchedResponses <- batchedResponse{r.Sequence, &errorResponse}
 			} else {
-				batchedResponses <- BatchedResponse{r.Sequence, response}
+				batchedResponses <- batchedResponse{r.Sequence, response}
 			}
 		}()
 	}

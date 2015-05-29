@@ -1,4 +1,4 @@
-package batch
+package handlers
 
 import (
 	"log"
@@ -6,6 +6,8 @@ import (
 	"net/http/httputil"
 )
 
+// Debug simply logs an incoming HTTP request.
+// TODO return it as the response in whatever format the incoming content type is?
 func Debug(w http.ResponseWriter, r *http.Request) {
 	dump, err := httputil.DumpRequest(r, true)
 	if err != nil {
