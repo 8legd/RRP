@@ -45,27 +45,6 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Resp
 			transport := &http.Transport{ResponseHeaderTimeout: timeout}
 			transport.DisableCompression = true
 			response, err := transport.RoundTrip(r.Request)
-			// TODO add support for all possible redirect status codes, see line 249 of https://golang.org/src/net/http/client.go
-			if response.StatusCode == 302 {
-				location := response.Header.Get("Location")
-				if location != "" {
-					redirectURL, err := url.Parse(location)
-					if err == nil {
-						if !redirectURL.IsAbs() { // handle relative URLs
-							redirectURL, err = url.Parse(r.Request.URL.Scheme + "://" + r.Request.Host + "/" + location)
-						}
-						queryString := ""
-						if len(redirectURL.Query()) > 0 {
-							queryString = "?" + redirectURL.Query().Encode()
-						}
-						redirect, err := http.NewRequest("GET", redirectURL.Scheme+"://"+redirectURL.Host+redirectURL.Path+queryString, nil)
-						if err == nil {
-							response, err = transport.RoundTrip(redirect)
-						}
-					}
-				}
-			}
-
 			if err != nil {
 				// Create an error response for any HTTP Transport errors - Status 400 (Bad Request)
 				errorResponse := http.Response{}
@@ -74,6 +53,26 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Resp
 				errorResponse.Status = strconv.Itoa(http.StatusBadRequest) + " " + err.Error()
 				batchedResponses <- batchedResponse{r.Sequence, &errorResponse}
 			} else {
+				// TODO add support for all possible redirect status codes, see line 249 of https://golang.org/src/net/http/client.go
+				if response.StatusCode == 302 {
+					location := response.Header.Get("Location")
+					if location != "" {
+						redirectURL, err := url.Parse(location)
+						if err == nil {
+							if !redirectURL.IsAbs() { // handle relative URLs
+								redirectURL, err = url.Parse(r.Request.URL.Scheme + "://" + r.Request.Host + "/" + location)
+							}
+							queryString := ""
+							if len(redirectURL.Query()) > 0 {
+								queryString = "?" + redirectURL.Query().Encode()
+							}
+							redirect, err := http.NewRequest("GET", redirectURL.Scheme+"://"+redirectURL.Host+redirectURL.Path+queryString, nil)
+							if err == nil {
+								response, err = transport.RoundTrip(redirect)
+							}
+						}
+					}
+				}
 				batchedResponses <- batchedResponse{r.Sequence, response}
 			}
 		}()
