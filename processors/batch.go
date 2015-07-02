@@ -44,6 +44,7 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Resp
 			r := <-batchedRequests
 			transport := &http.Transport{ResponseHeaderTimeout: timeout}
 			transport.DisableCompression = true
+			transport.Proxy = http.ProxyFromEnvironment
 			response, err := transport.RoundTrip(r.Request)
 			if err != nil {
 				// Create an error response for any HTTP Transport errors - Status 400 (Bad Request)
