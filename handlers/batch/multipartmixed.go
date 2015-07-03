@@ -36,17 +36,20 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// check for optional timeout header
-	tm := r.Header.Get("x-batchproxy-timeout")
+	tm := r.Header.Get("x-rrp-timeout")
 	var timeout time.Duration
 	if tm != "" {
 		timeout, err = time.ParseDuration(tm + "s")
 		if err != nil {
 			log.Println(err)
-			http.Error(w, "invalid value for x-batchproxy-timeout header, expected number of seconds", http.StatusBadRequest)
+			http.Error(w, "invalid value for x-rrp-timeout header, expected number of seconds", http.StatusBadRequest)
 			return
+		} else {
+			log.Println("With specified timeout", timeout)
 		}
 	} else {
 		timeout = time.Duration(20) * time.Second // Default timeout is 20 seconds
+		log.Println("With default timeout", timeout)
 	}
 	boundary, ok := params["boundary"]
 	if !ok {
