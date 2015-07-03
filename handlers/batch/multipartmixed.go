@@ -44,9 +44,8 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			log.Println(err)
 			http.Error(w, "invalid value for x-rrp-timeout header, expected number of seconds", http.StatusBadRequest)
 			return
-		} else {
-			log.Println("With specified timeout", timeout)
 		}
+		log.Println("With specified timeout", timeout)
 	} else {
 		timeout = time.Duration(20) * time.Second // Default timeout is 20 seconds
 		log.Println("With default timeout", timeout)
@@ -146,19 +145,21 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			log.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-		io.WriteString(pw, next.Proto+" "+next.Status+"\r\n")
-		if next.Header != nil {
-			next.Header.Write(pw)
-			io.WriteString(pw, "\r\n")
-		}
-		if next.Body != nil {
-			pb, err = ioutil.ReadAll(next.Body)
-			if err != nil {
-				log.Println(err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+		if next != nil {
+			io.WriteString(pw, next.Proto+" "+next.Status+"\r\n")
+			if next.Header != nil {
+				next.Header.Write(pw)
+				io.WriteString(pw, "\r\n")
 			}
-			pw.Write(pb)
-			io.WriteString(pw, "\r\n")
+			if next.Body != nil {
+				pb, err = ioutil.ReadAll(next.Body)
+				if err != nil {
+					log.Println(err)
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+				pw.Write(pb)
+				io.WriteString(pw, "\r\n")
+			}
 		}
 	}
 }

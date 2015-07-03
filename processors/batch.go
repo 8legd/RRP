@@ -19,6 +19,25 @@ type batchedResponse struct {
 	Response *http.Response
 }
 
+func checkUserAgent(request *http.Request) {
+	// Add default User-Agent of `RRP <version>` if none is specified in the request
+	// TODO remove hard coded version and set it on build - need to setup our automated build first :)
+	if request.Header != nil {
+		if ua := request.Header["User-Agent"]; len(ua) == 0 {
+			request.Header.Set("User-Agent", "RRP 1.0.0")
+		}
+	}
+}
+
+func errorResponse(request *http.Request, err error) *http.Response {
+	// Create an error response for any HTTP Transport errors - Status 400 (Bad Request)
+	response := &http.Response{}
+	response.Proto = request.Proto
+	response.StatusCode = http.StatusBadRequest
+	response.Status = strconv.Itoa(http.StatusBadRequest) + " " + err.Error()
+	return response
+}
+
 // ProcessBatch sends a batch of HTTP requests using http.Transport.
 // Each request is sent concurrently in a seperate goroutine.
 // The HTTP responses are returned in the same sequence as their corresponding requests.
@@ -45,14 +64,10 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Resp
 			transport := &http.Transport{ResponseHeaderTimeout: timeout}
 			transport.DisableCompression = true
 			transport.Proxy = http.ProxyFromEnvironment
+			checkUserAgent(r.Request)
 			response, err := transport.RoundTrip(r.Request)
 			if err != nil {
-				// Create an error response for any HTTP Transport errors - Status 400 (Bad Request)
-				errorResponse := http.Response{}
-				errorResponse.Proto = r.Request.Proto
-				errorResponse.StatusCode = http.StatusBadRequest
-				errorResponse.Status = strconv.Itoa(http.StatusBadRequest) + " " + err.Error()
-				batchedResponses <- batchedResponse{r.Sequence, &errorResponse}
+				response = errorResponse(r.Request, err)
 			} else {
 				// TODO add support for all possible redirect status codes, see line 249 of https://golang.org/src/net/http/client.go
 				if response.StatusCode == 302 {
@@ -69,13 +84,19 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Resp
 							}
 							redirect, err := http.NewRequest("GET", redirectURL.Scheme+"://"+redirectURL.Host+redirectURL.Path+queryString, nil)
 							if err == nil {
+								checkUserAgent(redirect)
 								response, err = transport.RoundTrip(redirect)
+								if err != nil {
+									response = errorResponse(r.Request, err)
+								}
+							} else {
+								response = errorResponse(r.Request, err)
 							}
 						}
 					}
 				}
-				batchedResponses <- batchedResponse{r.Sequence, response}
 			}
+			batchedResponses <- batchedResponse{r.Sequence, response}
 		}()
 	}
 
