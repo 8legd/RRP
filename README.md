@@ -7,4 +7,7 @@ Speed up your web service / api requests with Rapid Response Proxy
 - Batch processing support
 
 ### Installation
-```TODO
+For binary distributions see [releases] (https://github.com/8legd/RRP/releases)
+
+For a detailed guide see [Getting Started] (https://github.com/8legd/RRP/wiki/Getting-Started) in the wiki
+
