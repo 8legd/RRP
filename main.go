@@ -34,5 +34,6 @@ func main() {
 	// TODO support other batch requests e.g. AJAX support?
 
 	flag.Set("bind", bind)
+	log.Println("Successfully configured RRP to use Goji web framework")
 	goji.Serve()
 }
