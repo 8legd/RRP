@@ -182,6 +182,8 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 				io.WriteString(pw, "\r\n")
 			}
 			if nextResponse.Body != nil {
+				// Close the underlying connection so it can be re-used
+				defer nextResponse.Body.Close()
 				pb, err = ioutil.ReadAll(nextResponse.Body)
 				if err != nil {
 					log.Println("Error:", err)

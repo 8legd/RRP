@@ -56,14 +56,17 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Resp
 	var wg sync.WaitGroup
 	wg.Add(z)
 
+	// http.Transport is safe for concurrent use by multiple goroutines and for efficiency should only be created once and re-used
+	// TODO maybe handle timeout outside of transport so can just create a single instance for re-use on server start
+	// (This would be more accurate anyway as `ResponseHeaderTimeout` does not include the time to read the response body)
+	transport := &http.Transport{ResponseHeaderTimeout: timeout}
+	transport.Proxy = http.ProxyFromEnvironment
+
 	// Start our individual HTTP Transport goroutines to process the BatchedRequests
 	for i := 0; i < z; i++ {
-		go func() {
+		go func(transport *http.Transport) {
 			defer wg.Done()
 			r := <-batchedRequests
-			transport := &http.Transport{ResponseHeaderTimeout: timeout}
-			transport.DisableCompression = true
-			transport.Proxy = http.ProxyFromEnvironment
 			checkUserAgent(r.Request)
 			response, err := transport.RoundTrip(r.Request)
 			if err != nil {
@@ -97,7 +100,7 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Resp
 				}
 			}
 			batchedResponses <- batchedResponse{r.Sequence, response}
-		}()
+		}(transport)
 	}
 
 	// Wait for all the requests to be processed
