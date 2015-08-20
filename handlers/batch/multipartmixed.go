@@ -17,39 +17,6 @@ import (
 	"github.com/8legd/RRP/processors"
 )
 
-func writeResponse(nextURL string, nextResponse *http.Response, partWriter io.Writer, timeout time.Duration) error {
-
-	totalBytesRead := 0
-	startedReading := time.Now()
-
-	// Defer closing of underlying connection so it can be re-used
-	defer func() {
-		nextResponse.Body.Close()
-		log.Println("Read", totalBytesRead, "bytes from", nextURL, "in", time.Since(startedReading))
-	}()
-
-	for {
-		chunk := make([]byte, 8192)
-		lastReadLength, err := nextResponse.Body.Read(chunk)
-		totalBytesRead = totalBytesRead + lastReadLength
-		if lastReadLength > 0 && lastReadLength < 8192 {
-			chunk = chunk[0:lastReadLength]
-		}
-
-		if lastReadLength < 1 || err == io.EOF {
-			if lastReadLength > 0 {
-				partWriter.Write(chunk)
-			}
-			io.WriteString(partWriter, "\r\n")
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		partWriter.Write(chunk)
-	}
-}
-
 // MultipartMixed handles a batch of HTTP requests in `multipart/mixed` format.
 // Each part contains `application/http` content representing an individual request.
 // Once processed, HTTP responses are returned as `application/http` content in
@@ -160,7 +127,6 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		batch = append(batch, request)
 	}
 
-	startedProcessing := time.Now()
 	responses, err := processors.ProcessBatch(batch, timeout)
 	if err != nil {
 		log.Println("Error:", err)
@@ -171,7 +137,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	// create some variables to keep track of the indvidual responses as we process them
 	// (these are used for reporting via log output e.g. should a runtime panic occur)
 	var nextIndex int
-	var nextResponse *http.Response
+	var nextResponse *processors.BatchedResponse
 
 	// send a multipart response back
 	// (We need to buffer this in case there is an error. If we didn't and wrote
@@ -210,19 +176,21 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if nextResponse != nil {
-			log.Println("Received", nextResponse.Status, "from", urls[nextIndex], "in", time.Since(startedProcessing))
+			log.Println("Received", nextResponse.Status, "from", urls[nextIndex], "in", nextResponse.ProcessingDuration)
 			io.WriteString(pw, nextResponse.Proto+" "+nextResponse.Status+"\r\n")
 			if nextResponse.Header != nil {
 				nextResponse.Header.Write(pw)
 				io.WriteString(pw, "\r\n")
 			}
 			if nextResponse.Body != nil {
-				err = writeResponse(urls[nextIndex], nextResponse, pw, timeout-time.Since(startedProcessing))
+				pb, err := ioutil.ReadAll(nextResponse.Body)
 				if err != nil {
 					log.Println("Error:", err)
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 					return
 				}
+				pw.Write(pb)
+				io.WriteString(pw, "\r\n")
 			}
 		} else {
 			err = errors.New("missing response for " + urls[nextIndex])

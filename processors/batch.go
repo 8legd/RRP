@@ -17,18 +17,14 @@ type batchedRequest struct {
 	Request  *http.Request
 }
 
-type batchedResponse struct {
+type BatchedResponse struct {
 	Sequence           int
-	Response           *http.Response
+	Status             string
+	Proto              string
+	Header             *http.Header
+	Body               *bytes.Reader
 	ProcessingDuration time.Duration
 }
-
-// we buffer the response body so we can handle timeouts on read
-type bufferedBody struct {
-	io.Reader
-}
-
-func (bufferedBody) Close() error { return nil }
 
 func checkUserAgent(request *http.Request) {
 	// Add default User-Agent of `RRP <version>` if none is specified in the request
@@ -58,7 +54,7 @@ func errorInReadingResponse(request *http.Request, err error) *http.Response {
 	return response
 }
 
-func readResponseBody(r *http.Response, timeout time.Duration) (*bufferedBody, error) {
+func readResponseBody(r *http.Response, timeout time.Duration) (*bytes.Reader, error) {
 
 	// Create a buffer to hold the data
 	var buffy bytes.Buffer
@@ -79,7 +75,12 @@ func readResponseBody(r *http.Response, timeout time.Duration) (*bufferedBody, e
 	}(r, t)
 
 	// Read the response
-	chunkSize := 8192
+
+	// TODO chunkSize should be configurable (maybe add request param as per timeout)
+	chunkSize := 16384
+	if r.ContentLength > 0 && r.ContentLength < int64(chunkSize) {
+		chunkSize = int(r.ContentLength)
+	}
 	for {
 		chunk := make([]byte, chunkSize)
 		lastReadLength, err := r.Body.Read(chunk)
@@ -95,15 +96,16 @@ func readResponseBody(r *http.Response, timeout time.Duration) (*bufferedBody, e
 		if lastReadLength > 0 && lastReadLength < chunkSize {
 			chunk = chunk[0:lastReadLength]
 		}
-		if lastReadLength < 1 || err == io.EOF { // return on success
+		if lastReadLength < 1 || err == io.EOF { // return on success (finished reading without error)
 			if lastReadLength > 0 {
 				_, err = buffy.Write(chunk)
-				if err != nil {
+
+				if err != nil { // return on error in write
 					return nil, err
 				}
 			}
 			io.WriteString(&buffy, "\r\n")
-			return &bufferedBody{&buffy}, nil
+			return bytes.NewReader(buffy.Bytes()), nil
 		}
 
 		_, err = buffy.Write(chunk) // write next chunk, and keep reading in loop
@@ -117,7 +119,7 @@ func readResponseBody(r *http.Response, timeout time.Duration) (*bufferedBody, e
 // ProcessBatch sends a batch of HTTP requests using http.Transport.
 // Each request is sent concurrently in a seperate goroutine.
 // The HTTP responses are returned in the same sequence as their corresponding requests.
-func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Response, []time.Duration, error) {
+func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedResponse, error) {
 	z := len(requests)
 	// Setup a buffered channel to queue up the requests for processing by individual HTTP Transport goroutines
 	batchedRequests := make(chan batchedRequest, z)
@@ -127,7 +129,7 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Resp
 	// Close the channel - nothing else is sent to it
 	close(batchedRequests)
 	// Setup a second buffered channel for collecting the BatchedResponses from the individual HTTP Transport goroutines
-	batchedResponses := make(chan batchedResponse, z)
+	batchedResponses := make(chan BatchedResponse, z)
 	// Setup a wait group so we know when all the BatchedRequests have been processed
 	var wg sync.WaitGroup
 	wg.Add(z)
@@ -176,19 +178,19 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Resp
 					}
 				}
 			}
-			// read response body (into buffer) and then reassign the buffered body to our response
-			// this is so we can manage timeouts during the read
+			// read response body (into buffer) this is so we can manage timeouts during the read
 			readTimeout := timeout - time.Since(startedProcessing)
 			if readTimeout < 1 {
 				readTimeout = 1
 			}
+			var responseBody *bytes.Reader
 			if response.Body != nil {
-				response.Body, err = readResponseBody(response, readTimeout)
+				responseBody, err = readResponseBody(response, readTimeout)
 				if err != nil {
 					response = errorInReadingResponse(r.Request, err)
 				}
 			}
-			batchedResponses <- batchedResponse{r.Sequence, response, time.Since(startedProcessing)}
+			batchedResponses <- BatchedResponse{r.Sequence, response.Status, response.Proto, &response.Header, responseBody, time.Since(startedProcessing)}
 		}(transport)
 	}
 
@@ -199,15 +201,13 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*http.Resp
 	// Check we have the correct number of BatchedResponses
 	if len(batchedResponses) == z {
 		// Return the BatchedResponses in their correct sequence
-		responses := make([]*http.Response, z)
-		processingDurations := make([]time.Duration, z)
+		responses := make([]*BatchedResponse, z)
 		for i := 0; i < z; i++ {
 			r := <-batchedResponses
-			responses[r.Sequence] = r.Response
-			processingDurations[r.Sequence] = r.ProcessingDuration
+			responses[r.Sequence] = &r
 		}
-		return responses, processingDurations, nil
+		return responses, nil
 	}
 	err := fmt.Errorf("expected %d responses for this batch but only recieved %d", z, len(batchedResponses))
-	return nil, nil, err
+	return nil, err
 }
