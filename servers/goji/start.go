@@ -2,20 +2,24 @@ package goji
 
 import (
 	"flag"
+	"io/ioutil"
 	"log"
+	"time"
 
 	"github.com/zenazn/goji"
 	"github.com/zenazn/goji/web/middleware"
 
 	"github.com/8legd/RRP/handlers"
 	"github.com/8legd/RRP/handlers/batch"
+	"github.com/8legd/RRP/handlers/logging"
 )
 
 func Start(bind string) {
-	// TODO use/write enhanced logging library?
-	// To disable default logging
-	// log.SetOutput(ioutil.Discard)
-	// goji.DefaultMux.Abandon(middleware.Logger)
+	started := time.Now()
+
+	// Disable default logging (we use custom ELF based logging instead)
+	log.SetOutput(ioutil.Discard)
+	goji.DefaultMux.Abandon(middleware.Logger)
 
 	// Remove any other unnecessary default middleware
 	goji.DefaultMux.Abandon(middleware.RequestID)
@@ -25,6 +29,9 @@ func Start(bind string) {
 	// TODO support other batch requests e.g. AJAX support?
 
 	flag.Set("bind", bind)
-	log.Println("Successfully configured RRP to use Goji web framework")
+
+	// ELF based logging
+	logging.Elfi()
+	logging.Elfl("START", time.Since(started), "OK", "Successfully configured and started RRP using Goji web framework")
 	goji.Serve()
 }
