@@ -12,7 +12,7 @@ A list of client libraries to RRP are maintained in the (Wiki) [https://github.c
 
 ### Batch processing
 
-RRP provides support for batch processing HTTP requests with a syntax similar to [Google Cloud's batch processing] (https://cloud.google.com/storage/docs/json_api/v1/how-tos/batch) which was in turn based on the [OData syntax] (http://www.odata.org/documentation/odata-version-3-0/batch-processing/)
+RRP provides support for batch processing HTTP requests with a syntax similar to [Google Cloud's batch processing](https://cloud.google.com/storage/docs/json_api/v1/how-tos/batch) which was in turn based on the [OData syntax](http://www.odata.org/documentation/odata-version-3-0/batch-processing/)
 
 A batch request is a single HTTP request which acts as a container using the multipart/mixed content type to aggregate individual HTTP requests as parts
 
