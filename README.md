@@ -4,11 +4,13 @@ Speed up your web service / api requests with Rapid Response Proxy
 
 ## Overview
 
-Rapid Response Proxy (RRP) acts as a proxy for web service / api requests with the aim of speeding up the time taken to transport each request and return a response. At the moment this is facilitated through batch processing of requests but the goal of the project is broader with aim to explore other strategies to providing a more `rapid response`.
+Rapid Response Proxy (RRP) acts as a proxy for web service / api requests with the aim of speeding up the time taken to transport each request and return a response.
 
-- Batch processing
+At the moment this is facilitated through batch processing of requests but the goal of the project is broader and aims to explore other strategies to provide a more "rapid response".
 
-RRP provides support for batch processing HTTP requests with a syntax similar to [Google Cloud's batch processing] (https://cloud.google.com/storage/docs/json_api/v1/how-tos/batch) which was in turn based on the OData syntax http://www.odata.org/documentation/odata-version-3-0/batch-processing/).
+### Batch processing
+
+RRP provides support for batch processing HTTP requests with a syntax similar to [Google Cloud's batch processing] (https://cloud.google.com/storage/docs/json_api/v1/how-tos/batch) which was in turn based on the OData syntax (http://www.odata.org/documentation/odata-version-3-0/batch-processing/).
 
 A batch request is a single HTTP request which acts as a container using the multipart/mixed content type to aggregate individual HTTP requests as parts.
 
