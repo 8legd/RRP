@@ -8,7 +8,7 @@ Rapid Response Proxy (RRP) acts as a proxy for web service / api requests with t
 
 At the moment this is facilitated through batch processing of requests but the goal of the project is broader and aims to explore other strategies to provide a more "rapid response"
 
-A list of client libraries to RRP are maintained in the (Wiki) [https://github.com/8legd/RRP/wiki/Client-Libraries]
+A list of client libraries to RRP are maintained in the [Wiki](https://github.com/8legd/RRP/wiki/Client-Libraries)
 
 ### Batch processing
 
