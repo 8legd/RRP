@@ -21,7 +21,7 @@ Below is an example of what the raw multipart/mixed batch request looks like.
 NOTE:
   * The `x-rrp-timeout` header specifies a timeout in seconds which is applied to all the requests contained in the batch
   * The individual requests making up the batch are included using the `application/http` content type
-  * The individual requests must contain a `Forwarded` header specifying what protocol RRP is to use when making the request (http/https)
+  * The individual requests must contain a `Forwarded` header specifying what protocol RRP should use (http/https)
 
 
 ```
