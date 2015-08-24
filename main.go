@@ -12,7 +12,7 @@ func main() {
 	if bind == "" {
 		log.Fatal("Missing RRP_BIND environmental variable")
 	}
-	// TODO usage error if missing RRP_BIND env var
+	// TODO check bind format is valid - better usage error
 
 	goji.Start(bind)
 }

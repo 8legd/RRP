@@ -135,8 +135,6 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 	wg.Add(z)
 
 	// http.Transport is safe for concurrent use by multiple goroutines and for efficiency should only be created once and re-used
-	// TODO maybe handle timeout outside of transport so can just create a single instance for re-use on server start
-	// (This would be more accurate anyway as `ResponseHeaderTimeout` does not include the time to read the response body)
 	transport := &http.Transport{ResponseHeaderTimeout: timeout}
 	transport.Proxy = http.ProxyFromEnvironment
 
