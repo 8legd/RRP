@@ -8,7 +8,7 @@ import (
 
 func init() {
 	fmt.Println("#Version: 1.0")
-	fmt.Println("#Fields: date time event message parent-event time-taken payload cause")
+	fmt.Println("#Fields: date time event message tags time-taken payload cause")
 }
 
 // Log sends the specified parameters to standard output in ELF format (http://www.w3.org/TR/WD-logfile.html)
@@ -20,9 +20,9 @@ func init() {
 // all other fields are optional and provided using `LogOptions`
 func Log(event string, message string, options LogOptions) {
 	now := time.Now()
-	parentEvent := "-"
-	if options.ParentEvent != "" {
-		parentEvent = options.ParentEvent
+	tags := "-"
+	if options.Tags != "" {
+		tags = options.Tags
 	}
 	timeTaken := "-"
 	if !options.Started.IsZero() {
@@ -40,13 +40,13 @@ func Log(event string, message string, options LogOptions) {
 	fmt.Printf("%d-%02d-%02d\t%02d:%02d:%02d\t%s\t%s\t%s\t%s\t%s\t%s\n",
 		now.Year(), now.Month(), now.Day(),
 		now.Hour(), now.Minute(), now.Second(),
-		event, message, parentEvent, timeTaken, payload, cause)
+		event, message, tags, timeTaken, payload, cause)
 }
 
-// Optional parameters for Log function
+// LogOptions is a simple type to provide optional parameters to Log function
 type LogOptions struct {
-	ParentEvent string
-	Started     time.Time
-	Payload     string
-	Cause       error
+	Tags    string
+	Started time.Time
+	Payload string
+	Cause   error
 }

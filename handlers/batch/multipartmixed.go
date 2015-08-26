@@ -28,25 +28,24 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	// TODO track some kind of request id - this will be parent event in log
 	// e.g. check for `x-request-id-header` if not create one as per Heroku (https://devcenter.heroku.com/articles/http-request-id)
 	requestID := "TODO:REQUEST_ID"
-	requestEvent := "REQUEST" + requestID
-	elf.Log(requestEvent, "Started handling of batch/multipartmixed request", elf.LogOptions{})
+	elf.Log("INFO", "Started handling of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Started: started})
 	var batch []*http.Request
 	ct, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil {
-		elf.Log("ERROR", "Error parsing `Content-Type` header of batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+		elf.Log("ERROR", "Error parsing `Content-Type` header of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if ct != "multipart/mixed" {
 		err = errors.New("unsupported content type, expected multipart/mixed")
-		elf.Log("ERROR", "Error parsing `Content-Type` header of batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+		elf.Log("ERROR", "Error parsing `Content-Type` header of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
 		return
 	}
 	boundary, ok := params["boundary"]
 	if !ok {
 		err = errors.New("missing multipart boundary")
-		elf.Log("ERROR", "Error parsing `Content-Type` header of batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+		elf.Log("ERROR", "Error parsing `Content-Type` header of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -57,15 +56,15 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	if tm != "" {
 		timeout, err = time.ParseDuration(tm + "s")
 		if err != nil {
-			elf.Log("ERROR", "Error parsing `x-rrp-timeout` header of batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+			elf.Log("ERROR", "Error parsing `x-rrp-timeout` header of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 			http.Error(w, "invalid value for x-rrp-timeout header, expected number of seconds", http.StatusBadRequest)
 			return
 		}
-		elf.Log("INFO", "Timeout from request of "+strconv.FormatFloat(timeout.Seconds(), 'f', 3, 64), elf.LogOptions{ParentEvent: requestEvent, Started: started})
+		elf.Log("INFO", "Timeout from request of "+strconv.FormatFloat(timeout.Seconds(), 'f', 3, 64), elf.LogOptions{Tags: requestID, Started: started})
 
 	} else {
 		timeout = time.Duration(20) * time.Second // Default timeout is 20 seconds
-		elf.Log("INFO", "Timeout is default of "+strconv.FormatFloat(timeout.Seconds(), 'f', 3, 64), elf.LogOptions{ParentEvent: requestEvent, Started: started})
+		elf.Log("INFO", "Timeout is default of "+strconv.FormatFloat(timeout.Seconds(), 'f', 3, 64), elf.LogOptions{Tags: requestID, Started: started})
 	}
 
 	// Read request body - should be multipart content - and process the batch
@@ -80,27 +79,27 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		if err == io.EOF {
 			if len(batch) < 1 {
 				err = errors.New("invalid multipart content")
-				elf.Log("ERROR", "Error parsing content of batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+				elf.Log("ERROR", "Error parsing content of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			break // finished reading multpart parts
 		}
 		if err != nil {
-			elf.Log("ERROR", "Error parsing content of batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+			elf.Log("ERROR", "Error parsing content of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		// check next part's content type
 		pct, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
 		if err != nil {
-			elf.Log("ERROR", "Error reading next parts `Content-Type` header in batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+			elf.Log("ERROR", "Error reading next parts `Content-Type` header in batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if pct != "application/http" {
 			err = errors.New("unsupported content type for multipart/mixed content, expected each part to be application/http")
-			elf.Log("ERROR", "Error reading next parts `Content-Type` header in batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+			elf.Log("ERROR", "Error reading next parts `Content-Type` header in batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -109,14 +108,14 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		protocol := pr.Header.Get("Forwarded")
 		if protocol == "" || !strings.Contains(protocol, "proto=http") { // proto must be `http` or `https`
 			err = errors.New("missing header in multipart/mixed content, expected each part to contain a Forwarded header with a valid proto value (proto=http or proto=https)")
-			elf.Log("ERROR", "Missing part header in batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+			elf.Log("ERROR", "Missing part header in batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		parts := strings.Split(protocol, "proto=")
 		if len(parts) < 2 || (parts[1] != "http" && parts[1] != "https") {
 			err = errors.New("invalid proto value in Forwarded header, expected proto=http or proto=https")
-			elf.Log("ERROR", "Invalid part header in batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+			elf.Log("ERROR", "Invalid part header in batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -127,13 +126,13 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		// NOTE: if there is no Content-Length header the body will not have been read (will be empty)
 		pb, err := ioutil.ReadAll(pr.Body) // TODO hmmm  (http://jmoiron.net/blog/crossing-streams-a-love-letter-to-ioreader/)
 		if err != nil {
-			elf.Log("ERROR", "Error parsing content of batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+			elf.Log("ERROR", "Error parsing content of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		request, err := http.NewRequest(r.Method, url, bytes.NewBuffer(pb))
 		if err != nil {
-			elf.Log("ERROR", "Error reading individual request from content in batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+			elf.Log("ERROR", "Error reading individual request from content in batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -144,7 +143,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 
 	responses, err := processors.ProcessBatch(batch, timeout)
 	if err != nil {
-		elf.Log("ERROR", "Error processing batch from batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+		elf.Log("ERROR", "Error processing batch from batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -173,12 +172,12 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			fmt.Println("Response", nextResponse)
 
 			err = errors.New("panic while processing request")
-			elf.Log("ERROR", "Panic whilst processing batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+			elf.Log("ERROR", "Panic whilst processing batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		elf.Log(requestEvent, "Completed handling of batch/multipartmixed request", elf.LogOptions{Started: started})
+		elf.Log("INFO", "Completed handling of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Started: started})
 
 	}()
 
@@ -192,13 +191,13 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		ph.Set("Content-Type", "application/http")
 		pw, err = mw.CreatePart(ph)
 		if err != nil {
-			elf.Log("ERROR", "Error whilst processing batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+			elf.Log("ERROR", "Error whilst processing batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if nextResponse != nil {
 
-			elf.Log("INFO", "Received "+nextResponse.Status+" from "+urls[nextIndex], elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: time.Now().Add(nextResponse.ProcessingDuration * -1)})
+			elf.Log("INFO", "Received "+nextResponse.Status+" from "+urls[nextIndex], elf.LogOptions{Tags: requestID, Cause: err, Started: time.Now().Add(nextResponse.ProcessingDuration * -1)})
 
 			io.WriteString(pw, nextResponse.Proto+" "+nextResponse.Status+"\r\n")
 			if nextResponse.Header != nil {
@@ -208,7 +207,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			if nextResponse.Body != nil {
 				pb, err := ioutil.ReadAll(nextResponse.Body) // TODO hmmm  (http://jmoiron.net/blog/crossing-streams-a-love-letter-to-ioreader/)
 				if err != nil {
-					elf.Log("ERROR", "Error whilst reading batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+					elf.Log("ERROR", "Error whilst reading batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 					return
 				}
@@ -217,7 +216,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			err = errors.New("missing response for " + urls[nextIndex])
-			elf.Log("ERROR", "Error whilst processing batch/multipartmixed request", elf.LogOptions{ParentEvent: requestEvent, Cause: err, Started: started})
+			elf.Log("ERROR", "Error whilst processing batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
