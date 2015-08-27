@@ -25,9 +25,7 @@ import (
 // the same sequence as the corresponding requests.
 func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
-	// TODO track some kind of request id - this will be parent event in log
-	// e.g. check for `x-request-id-header` if not create one as per Heroku (https://devcenter.heroku.com/articles/http-request-id)
-	requestID := "TODO:REQUEST_ID"
+	requestID := "REQUEST_ID:" + r.Header.Get("x-request-id")
 	elf.Log("INFO", "Started handling of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Started: started})
 	var batch []*http.Request
 	ct, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -60,11 +58,11 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid value for x-rrp-timeout header, expected number of seconds", http.StatusBadRequest)
 			return
 		}
-		elf.Log("INFO", "Timeout from request of "+strconv.FormatFloat(timeout.Seconds(), 'f', 3, 64), elf.LogOptions{Tags: requestID, Started: started})
+		elf.Log("INFO", "Timeout as specified in request is "+strconv.FormatFloat(timeout.Seconds(), 'f', 3, 64), elf.LogOptions{Tags: requestID, Started: started})
 
 	} else {
-		timeout = time.Duration(20) * time.Second // Default timeout is 20 seconds
-		elf.Log("INFO", "Timeout is default of "+strconv.FormatFloat(timeout.Seconds(), 'f', 3, 64), elf.LogOptions{Tags: requestID, Started: started})
+		timeout = time.Duration(20) * time.Second // Default timeout is 20 seconds, TODO should be configurable
+		elf.Log("INFO", "Timeout used is default value of "+strconv.FormatFloat(timeout.Seconds(), 'f', 3, 64), elf.LogOptions{Tags: requestID, Started: started})
 	}
 
 	// Read request body - should be multipart content - and process the batch

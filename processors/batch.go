@@ -85,7 +85,7 @@ func readResponseBody(sequence int, response *http.Response, timeout time.Durati
 
 	// Read the response
 
-	// TODO chunkSize should be configurable (maybe add request param as per timeout)
+	// TODO chunkSize should be configurable (as per timeout)
 	chunkSize := 16384
 	if response.ContentLength > 0 && response.ContentLength < int64(chunkSize) {
 		chunkSize = int(response.ContentLength)
