@@ -25,8 +25,8 @@ func Start(bind string) {
 	// Custom middleware
 	custom := func(c *web.C, h http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
-			// add `x-request-id` header if not present, as per heroku (https://devcenter.heroku.com/articles/http-request-id)
 			if r.Header != nil {
+				// add `x-request-id` header if not present, as per heroku (https://devcenter.heroku.com/articles/http-request-id)
 				if ri := r.Header["x-request-id"]; len(ri) == 0 {
 					if reqID, ok := c.Env["reqID"].(string); ok { // goji provides a request id by default as part of its web context object
 						r.Header.Set("x-request-id", reqID)

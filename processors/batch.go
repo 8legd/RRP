@@ -2,7 +2,6 @@ package processors
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +10,16 @@ import (
 	"sync"
 	"time"
 )
+
+var (
+	transport *http.Transport
+)
+
+func init() {
+	// http.Transport is safe for concurrent use by multiple goroutines and for efficiency should only be created once and re-used
+	transport = &http.Transport{}
+	transport.Proxy = http.ProxyFromEnvironment
+}
 
 type batchedRequest struct {
 	Sequence int
@@ -37,96 +46,17 @@ func checkUserAgent(request *http.Request) {
 	}
 }
 
-func errorInTransportResponse(request *http.Request, err error) *http.Response {
-	// Return an error response for any HTTP Transport errors - Status 400 (Bad Request)
-	response := &http.Response{}
-	response.Proto = request.Proto
-	response.StatusCode = http.StatusBadRequest
-	response.Status = strconv.Itoa(http.StatusBadRequest) + " " + err.Error()
-	return response
-}
-
-func errorInReadingBody(sequence int, response *http.Response, err error, startedProcessing time.Time, batchedResponses chan BatchedResponse) {
-	// Create an error response for any HTTP Transport errors - Status 400 (Bad Request)
+func sendErrorResponse(sequence int, proto string, err error, timeout bool, startedProcessing time.Time, batchedResponses chan BatchedResponse) {
+	// Return an error response for any http transport errors - Status 400 (Bad Request)
+	e := err
+	if timeout {
+		e = fmt.Errorf("request cancelled by timeout causing error: %s", err.Error())
+	}
 	errResponse := &http.Response{}
-	errResponse.Proto = response.Request.Proto
+	errResponse.Proto = proto
 	errResponse.StatusCode = http.StatusBadRequest
-	errResponse.Status = strconv.Itoa(http.StatusBadRequest) + " " + err.Error()
+	errResponse.Status = strconv.Itoa(http.StatusBadRequest) + " " + e.Error()
 	batchedResponses <- BatchedResponse{sequence, errResponse.Status, errResponse.Proto, &errResponse.Header, nil, time.Since(startedProcessing)}
-}
-
-func readResponseBody(sequence int, response *http.Response, timeout time.Duration, startedProcessing time.Time, batchedResponses chan BatchedResponse) {
-
-	readTimeout := timeout - time.Since(startedProcessing)
-
-	if response.Body == nil {
-		batchedResponses <- BatchedResponse{sequence, response.Status, response.Proto, &response.Header, nil, time.Since(startedProcessing)}
-		return
-	}
-
-	// Create a buffer to hold the data
-	var buffy bytes.Buffer
-
-	// Create a timer to timeout if reading the response takes too long
-	timedOut := false
-	t := time.NewTimer(readTimeout)
-	go func() {
-		<-t.C
-		errorInReadingBody(sequence, response, errors.New("timeout reading response body"), startedProcessing, batchedResponses)
-		response.Body.Close()
-		timedOut = true
-	}()
-
-	// Defer closing of underlying connection so it can be re-used
-	defer func() {
-		t.Stop()
-		response.Body.Close()
-	}()
-
-	// Read the response
-
-	// TODO chunkSize should be configurable (as per timeout)
-	chunkSize := 16384
-	if response.ContentLength > 0 && response.ContentLength < int64(chunkSize) {
-		chunkSize = int(response.ContentLength)
-	}
-	for {
-		chunk := make([]byte, chunkSize)
-		lastReadLength, err := response.Body.Read(chunk)
-
-		if timedOut { // return on timeout (error response is handled in timeout goroutine)
-			return
-		}
-
-		if err != nil && err != io.EOF { // return on error in read
-			errorInReadingBody(sequence, response, err, startedProcessing, batchedResponses)
-			return
-		}
-
-		if lastReadLength > 0 && lastReadLength < chunkSize {
-			chunk = chunk[0:lastReadLength]
-		}
-		if lastReadLength < 1 || err == io.EOF { // return on success (finished reading without error)
-			if lastReadLength > 0 {
-				_, err = buffy.Write(chunk)
-
-				if err != nil { // return on error in write to buffer
-					errorInReadingBody(sequence, response, err, startedProcessing, batchedResponses)
-					return
-				}
-			}
-			io.WriteString(&buffy, "\r\n") // success
-			batchedResponses <- BatchedResponse{sequence, response.Status, response.Proto, &response.Header, bytes.NewReader(buffy.Bytes()), time.Since(startedProcessing)}
-			return
-		}
-
-		_, err = buffy.Write(chunk) // write next chunk, and keep reading in loop
-
-		if err != nil { // return on error in write
-			errorInReadingBody(sequence, response, err, startedProcessing, batchedResponses)
-			return
-		}
-	}
 }
 
 // ProcessBatch sends a batch of HTTP requests using http.Transport.
@@ -147,52 +77,109 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 	var wg sync.WaitGroup
 	wg.Add(z)
 
-	// http.Transport is safe for concurrent use by multiple goroutines and for efficiency should only be created once and re-used
-	transport := &http.Transport{ResponseHeaderTimeout: timeout}
-	transport.Proxy = http.ProxyFromEnvironment
-
 	// Start our individual HTTP Transport goroutines to process the BatchedRequests
 	for i := 0; i < z; i++ {
-		go func(transport *http.Transport) {
+		go func() {
 			defer wg.Done()
 			r := <-batchedRequests
 			startedProcessing := time.Now()
+			// Create a timer to timeout if processing the request takes too long
+			timedOut := false
+			timer := time.NewTimer(timeout)
+			go func() {
+				<-timer.C
+				timedOut = true
+				transport.CancelRequest(r.Request)
+			}()
 			checkUserAgent(r.Request)
 			response, err := transport.RoundTrip(r.Request)
 			if err != nil {
-				response = errorInTransportResponse(r.Request, err)
-			} else {
-				// TODO add support for all possible redirect status codes, see line 249 of https://golang.org/src/net/http/client.go
-				if response.StatusCode == 302 {
-					location := response.Header.Get("Location")
-					if location != "" {
-						redirectURL, err := url.Parse(location)
+				sendErrorResponse(r.Sequence, r.Request.Proto, err, timedOut, startedProcessing, batchedResponses)
+				return
+			}
+			// TODO add support for all possible redirect status codes, see line 249 of https://golang.org/src/net/http/client.go
+			if response.StatusCode == 302 {
+				location := response.Header.Get("Location")
+				if location != "" {
+					redirectURL, err := url.Parse(location)
+					if err == nil {
+						if !redirectURL.IsAbs() { // handle relative URLs
+							redirectURL, err = url.Parse(r.Request.URL.Scheme + "://" + r.Request.Host + "/" + location)
+						}
+						queryString := ""
+						if len(redirectURL.Query()) > 0 {
+							queryString = "?" + redirectURL.Query().Encode()
+						}
+						redirect, err := http.NewRequest("GET", redirectURL.Scheme+"://"+redirectURL.Host+redirectURL.Path+queryString, nil)
 						if err == nil {
-							if !redirectURL.IsAbs() { // handle relative URLs
-								redirectURL, err = url.Parse(r.Request.URL.Scheme + "://" + r.Request.Host + "/" + location)
+							checkUserAgent(redirect)
+							response, err = transport.RoundTrip(redirect)
+							if err != nil {
+								sendErrorResponse(r.Sequence, r.Request.Proto, err, timedOut, startedProcessing, batchedResponses)
+								return
 							}
-							queryString := ""
-							if len(redirectURL.Query()) > 0 {
-								queryString = "?" + redirectURL.Query().Encode()
-							}
-							redirect, err := http.NewRequest("GET", redirectURL.Scheme+"://"+redirectURL.Host+redirectURL.Path+queryString, nil)
-							if err == nil {
-								checkUserAgent(redirect)
-								response, err = transport.RoundTrip(redirect)
-								if err != nil {
-									response = errorInTransportResponse(r.Request, err)
-								}
-							} else {
-								response = errorInTransportResponse(r.Request, err)
-							}
+						} else {
+							sendErrorResponse(r.Sequence, r.Request.Proto, err, timedOut, startedProcessing, batchedResponses)
+							return
 						}
 					}
 				}
 			}
 
-			readResponseBody(r.Sequence, response, timeout, startedProcessing, batchedResponses)
-			return
-		}(transport)
+			//readResponseBody(r.Sequence, response, timeout, startedProcessing, batchedResponses)
+			if response.Body == nil {
+				batchedResponses <- BatchedResponse{r.Sequence, response.Status, response.Proto, &response.Header, nil, time.Since(startedProcessing)}
+				return
+			}
+			// Create a buffer to hold the data
+			var buffy bytes.Buffer
+
+			// Defer closing of underlying connection so it can be re-used
+			defer func() {
+				response.Body.Close()
+			}()
+
+			// Read the response
+			// TODO chunkSize should be configurable (as per timeout)
+			chunkSize := 16384
+			if response.ContentLength > 0 && response.ContentLength < int64(chunkSize) {
+				chunkSize = int(response.ContentLength)
+			}
+			for {
+				chunk := make([]byte, chunkSize)
+				lastReadLength, err := response.Body.Read(chunk)
+
+				if err != nil && err != io.EOF { // return on error in read
+					sendErrorResponse(r.Sequence, response.Proto, err, timedOut, startedProcessing, batchedResponses)
+					return
+				}
+
+				if lastReadLength > 0 && lastReadLength < chunkSize {
+					chunk = chunk[0:lastReadLength]
+				}
+				if lastReadLength < 1 || err == io.EOF { // return on success (finished reading without error)
+					if lastReadLength > 0 {
+						_, err = buffy.Write(chunk)
+
+						if err != nil { // return on error in write to buffer
+							sendErrorResponse(r.Sequence, response.Proto, err, timedOut, startedProcessing, batchedResponses)
+							return
+						}
+					}
+					io.WriteString(&buffy, "\r\n") // success
+					batchedResponses <- BatchedResponse{r.Sequence, response.Status, response.Proto, &response.Header, bytes.NewReader(buffy.Bytes()), time.Since(startedProcessing)}
+					return
+				}
+
+				_, err = buffy.Write(chunk) // write next chunk, and keep reading in loop
+
+				if err != nil { // return on error in write
+					sendErrorResponse(r.Sequence, response.Proto, err, timedOut, startedProcessing, batchedResponses)
+					return
+				}
+			}
+
+		}()
 	}
 
 	// Wait for all the requests to be processed
