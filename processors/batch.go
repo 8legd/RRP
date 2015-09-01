@@ -95,7 +95,7 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 			response, err := transport.RoundTrip(r.Request)
 			// Defer closing of underlying connection so it can be re-used
 			defer func() {
-				if response.Body != nil {
+				if response != nil && response.Body != nil {
 					response.Body.Close()
 				}
 			}()
@@ -136,7 +136,6 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 				}
 			}
 
-			//readResponseBody(r.Sequence, response, timeout, startedProcessing, batchedResponses)
 			if response.Body == nil {
 				batchedResponses <- BatchedResponse{r.Sequence, response.Status, response.Proto, &response.Header, nil, time.Since(startedProcessing)}
 				return
