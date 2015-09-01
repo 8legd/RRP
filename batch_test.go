@@ -2,10 +2,9 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
+	//"os"
 	"testing"
 	"time"
 
@@ -34,14 +33,15 @@ func TestBatch(t *testing.T) {
 	res, err := client.Do(req)
 	defer res.Body.Close()
 	if err != nil {
-		panic(err)
+		t.Log("err:", err)
 	}
 
-	fmt.Println("response Status:", res.Status)
+	t.Log("res status:", res.Status)
 
 	body, _ := ioutil.ReadAll(res.Body)
-	fmt.Println("response Body:", string(body))
+	t.Log("res body:", string(body))
 
-	os.Exit(0)
+	t.Log("TODO: move test scripts to Go")
+	t.Fail()
 
 }
