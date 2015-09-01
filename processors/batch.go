@@ -93,6 +93,12 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 			}()
 			checkUserAgent(r.Request)
 			response, err := transport.RoundTrip(r.Request)
+			// Defer closing of underlying connection so it can be re-used
+			defer func() {
+				if response.Body != nil {
+					response.Body.Close()
+				}
+			}()
 			if err != nil {
 				sendErrorResponse(r.Sequence, r.Request.Proto, err, timedOut, startedProcessing, batchedResponses)
 				return
@@ -109,6 +115,10 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 						queryString := ""
 						if len(redirectURL.Query()) > 0 {
 							queryString = "?" + redirectURL.Query().Encode()
+						}
+						// Close current connection before we issue redirect so it can be re-used
+						if response.Body != nil {
+							response.Body.Close()
 						}
 						redirect, err := http.NewRequest("GET", redirectURL.Scheme+"://"+redirectURL.Host+redirectURL.Path+queryString, nil)
 						if err == nil {
@@ -133,11 +143,6 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 			}
 			// Create a buffer to hold the data
 			var buffy bytes.Buffer
-
-			// Defer closing of underlying connection so it can be re-used
-			defer func() {
-				response.Body.Close()
-			}()
 
 			// Read the response
 			// TODO chunkSize should be configurable (as per timeout)
