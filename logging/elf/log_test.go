@@ -14,9 +14,9 @@ func TestLog(t *testing.T) {
 	Log("START", "Started thing", LogOptions{})
 	Log("REQUEST", "Handling Request", LogOptions{})
 	Log("READ", "Reading Request Body", LogOptions{
-		ParentEvent: "REQUEST",
-		Payload:     "extra information",
-		Started:     started,
+		Tags:    "SOMETAG",
+		Payload: "extra information",
+		Started: started,
 	})
 	err := fmt.Errorf("oops")
 	Log("ERROR", "Unexpected error", LogOptions{Cause: err, Started: started})
