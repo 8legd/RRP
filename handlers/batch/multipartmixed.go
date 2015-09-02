@@ -61,7 +61,7 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 		elf.Log("INFO", "Timeout as specified in request is "+strconv.FormatFloat(timeout.Seconds(), 'f', 3, 64), elf.LogOptions{Tags: requestID, Started: started})
 
 	} else {
-		timeout = time.Duration(20) * time.Second // Default timeout is 20 seconds, TODO should be configurable
+		timeout = processors.DefaultTimeout // Default timeout
 		elf.Log("INFO", "Timeout used is default value of "+strconv.FormatFloat(timeout.Seconds(), 'f', 3, 64), elf.LogOptions{Tags: requestID, Started: started})
 	}
 
