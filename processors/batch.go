@@ -137,7 +137,7 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 							if response.Body != nil {
 								response.Body.Close()
 							}
-							redirect, err := http.NewRequest("GET", redirectURL.Scheme+"://"+redirectURL.Host+redirectURL.Path+queryString, nil)
+							redirect, err := http.NewRequest("GET", redirectURL.Scheme+"://"+redirectURL.Host+redirectURL.EscapedPath()+queryString, nil)
 							if err == nil {
 								checkUserAgent(redirect)
 								response, err = client.Do(redirect)
