@@ -48,6 +48,16 @@ type BatchedResponse struct {
 	ProcessingDuration time.Duration
 }
 
+func checkUserAgent(request *http.Request) {
+	// Add default User-Agent of `RRP <version>` if none is specified in the request
+	// TODO remove hard coded version and set on build - need to setup our automated build first :)
+	if request.Header != nil {
+		if ua := request.Header["User-Agent"]; len(ua) == 0 {
+			request.Header.Set("User-Agent", "RRP 1.0.1")
+		}
+	}
+}
+
 func sendErrorResponse(sequence int, proto string, err error, timeout time.Duration, startedProcessing time.Time, batchedResponses chan BatchedResponse) {
 	// Return an error response - Status 400 (Bad Request)
 	e := err
@@ -99,6 +109,7 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 			r := <-batchedRequests
 			startedProcessing := time.Now()
 
+			checkUserAgent(r.Request)
 			response, err := client.Do(r.Request)
 
 			// Defer closing of underlying connection so it can be re-used
@@ -128,6 +139,7 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 							}
 							redirect, err := http.NewRequest("GET", redirectURL.Scheme+"://"+redirectURL.Host+redirectURL.Path+queryString, nil)
 							if err == nil {
+								checkUserAgent(redirect)
 								response, err = client.Do(redirect)
 								if err != nil {
 									sendErrorResponse(r.Sequence, r.Request.Proto, err, timeout, startedProcessing, batchedResponses)
