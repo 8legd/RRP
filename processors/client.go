@@ -7,8 +7,7 @@ import (
 )
 
 var (
-	// DefaultTimeout is the default timeout in seconds and is applied to all the requests contained in the batch
-	// (unless the batch request specifies a different value through the `x-rrp-timeout` header)
+	// DefaultTimeout is the default timeout duration specified in seconds
 	DefaultTimeout time.Duration
 	// DefaultClient is an instance of the custom http.Client created with with the DefaultTimeout
 	// (The returned client has a more leniant redirect policy always URL encoding/escaping the location prior to redirect)
@@ -17,7 +16,7 @@ var (
 
 func init() {
 	// http.Client is safe for concurrent use by multiple goroutines and for efficiency should only be created once and re-used
-	DefaultTimeout = time.Duration(20) * time.Second // Default timeout is 20 seconds, TODO should be configurable e.j flag
+	DefaultTimeout = time.Duration(20) * time.Second // Default timeout is 20 seconds, TODO should be configurable e.g. flag
 	DefaultClient = CreateClient(DefaultTimeout)
 }
 
