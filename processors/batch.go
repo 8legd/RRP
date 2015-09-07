@@ -2,36 +2,13 @@ package processors
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"sync"
 	"time"
 )
-
-var (
-	// DefaultTimeout is the default timeout in seconds and is applied to all the requests contained in the batch
-	// (unless the batch request specifies a different value through the `x-rrp-timeout` header)
-	DefaultTimeout time.Duration
-
-	defaultClient *http.Client
-
-	// Used to enforce custom redirect policy via http.Client's CheckRedirect function
-	errRedirectPolicy = errors.New("errRedirectPolicy")
-)
-
-func init() {
-	// http.Client is safe for concurrent use by multiple goroutines and for efficiency should only be created once and re-used
-	DefaultTimeout = time.Duration(20) * time.Second // Default timeout is 20 seconds, TODO should be configurable e.j flag
-	defaultClient = &http.Client{Timeout: DefaultTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return errRedirectPolicy
-		},
-	}
-}
 
 type batchedRequest struct {
 	Sequence int
@@ -91,15 +68,10 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 
 	var client *http.Client
 	if DefaultTimeout == timeout {
-		client = defaultClient
+		client = DefaultClient
 	} else {
 		// create a non standard client for the request
-		// TODO keep a cache of most commonly used clients/timeout values so we can reuse them in the same way as we do for `defaultClient`
-		client = &http.Client{Timeout: timeout,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return errRedirectPolicy
-			},
-		}
+		client = CreateClient(timeout)
 	}
 
 	// Start our individual HTTP Client goroutines to process the BatchedRequests
@@ -119,43 +91,8 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 				}
 			}()
 			if err != nil {
-				if urlerr, ok := err.(*url.Error); ok && urlerr.Err == errRedirectPolicy {
-					// handle redirects - custom policy that has more lenient handling of `Location` header
-					// (URL encodes location before redirecting)
-					location := response.Header.Get("Location")
-					if location != "" {
-						redirectURL, err := url.Parse(location)
-						if err == nil {
-							if !redirectURL.IsAbs() { // handle relative URLs
-								redirectURL, err = url.Parse(r.Request.URL.Scheme + "://" + r.Request.Host + "/" + location)
-							}
-							queryString := ""
-							if len(redirectURL.Query()) > 0 {
-								queryString = "?" + redirectURL.Query().Encode()
-							}
-							// Close current connection before we issue redirect so it can be re-used
-							if response.Body != nil {
-								response.Body.Close()
-							}
-							redirect, err := http.NewRequest("GET", redirectURL.Scheme+"://"+redirectURL.Host+redirectURL.EscapedPath()+queryString, nil)
-							if err == nil {
-								checkUserAgent(redirect)
-								response, err = client.Do(redirect)
-								if err != nil {
-									sendErrorResponse(r.Sequence, r.Request.Proto, err, timeout, startedProcessing, batchedResponses)
-									return
-								}
-							} else {
-								sendErrorResponse(r.Sequence, r.Request.Proto, err, timeout, startedProcessing, batchedResponses)
-								return
-							}
-						}
-					}
-				} else {
-					sendErrorResponse(r.Sequence, r.Request.Proto, err, timeout, startedProcessing, batchedResponses)
-					return
-				}
-
+				sendErrorResponse(r.Sequence, r.Request.Proto, err, timeout, startedProcessing, batchedResponses)
+				return
 			}
 			// If there is no body to read we are done
 			if response.Body == nil {
@@ -166,7 +103,7 @@ func ProcessBatch(requests []*http.Request, timeout time.Duration) ([]*BatchedRe
 			var buffy bytes.Buffer
 
 			// Read the response
-			// TODO chunkSize should be configurable (as per timeout above e.g. flag)
+			// TODO chunkSize should be configurable
 			chunkSize := 16384
 			if response.ContentLength > 0 && response.ContentLength < int64(chunkSize) {
 				chunkSize = int(response.ContentLength)
