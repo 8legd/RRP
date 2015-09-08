@@ -31,7 +31,7 @@ func CreateClient(timeout time.Duration) *http.Client {
 				queryString = "?" + req.URL.Query().Encode()
 			}
 			escapedURL, err := url.Parse(req.URL.Scheme + "://" + req.URL.Host + req.URL.EscapedPath() + queryString)
-			if err != nil {
+			if err == nil {
 				req.URL = escapedURL
 			}
 			return err
