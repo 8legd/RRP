@@ -28,11 +28,13 @@ func Start(bind string) {
 			if r.Header != nil {
 
 				// add `x-request-id` header if not present, as per heroku (https://devcenter.heroku.com/articles/http-request-id)
-				if ri := r.Header["x-request-id"]; len(ri) == 0 {
+				if r.Header.Get("x-request-id") == "" {
 					if reqID, ok := c.Env["reqID"].(string); ok { // goji provides a request id by default as part of its web context object
 						r.Header.Set("x-request-id", reqID)
 					}
 				}
+				// add it to all responses for tracing on clients
+				w.Header().Set("x-request-id", r.Header.Get("x-request-id"))
 
 			}
 			h.ServeHTTP(w, r)

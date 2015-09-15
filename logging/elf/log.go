@@ -2,11 +2,13 @@ package elf
 
 import (
 	"fmt"
+	"runtime"
 	"strconv"
 	"time"
 )
 
 func init() {
+	// TODO optional write to file instead Fprintf
 	fmt.Println("#Version: 1.0")
 	fmt.Println("#Fields: date time event message tags time-taken payload cause")
 }
@@ -34,8 +36,13 @@ func Log(event string, message string, options LogOptions) {
 	}
 	cause := "-"
 	if options.Cause != nil {
-		// TODO stacktrace etc...
-		cause = options.Cause.Error()
+		// Capture stack trace
+		buf := make([]byte, 1<<16)
+		written := runtime.Stack(buf, false)
+		if written > 1024 {
+			written = 1024
+		}
+		cause = fmt.Sprintf("%s\n\t%s", options.Cause, buf[0:written])
 	}
 	fmt.Printf("%d-%02d-%02d\t%02d:%02d:%02d\t%s\t%s\t%s\t%s\t%s\t%s\n",
 		now.Year(), now.Month(), now.Day(),

@@ -19,6 +19,11 @@ import (
 	"github.com/8legd/RRP/processors"
 )
 
+func handleError(w http.ResponseWriter, started time.Time, requestID string, statusCode int, errMsg string, cause error) {
+	elf.Log("ERROR", errMsg, elf.LogOptions{Tags: requestID, Cause: cause, Started: started})
+	http.Error(w, errMsg, statusCode)
+}
+
 // MultipartMixed handles a batch of HTTP requests in `multipart/mixed` format.
 // Each part contains `application/http` content representing an individual request.
 // Once processed, HTTP responses are returned as `application/http` content in
@@ -27,25 +32,22 @@ func MultipartMixed(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	requestID := "REQUEST_ID:" + r.Header.Get("x-request-id")
 	elf.Log("INFO", "Started handling of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Started: started})
+	stepErrMsg := "Error parsing `Content-Type` header of batch/multipartmixed request"
 	var batch []*http.Request
 	ct, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil {
-		elf.Log("ERROR", "Error parsing `Content-Type` header of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		handleError(w, started, requestID, http.StatusBadRequest, stepErrMsg, err)
 		return
 	}
 	if ct != "multipart/mixed" {
 		err = errors.New("unsupported content type, expected multipart/mixed")
-		elf.Log("ERROR", "Error parsing `Content-Type` header of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
-		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+		handleError(w, started, requestID, http.StatusBadRequest, stepErrMsg, err)
 		return
 	}
 	boundary, ok := params["boundary"]
 	if !ok {
 		err = errors.New("missing multipart boundary")
-		elf.Log("ERROR", "Error parsing `Content-Type` header of batch/multipartmixed request", elf.LogOptions{Tags: requestID, Cause: err, Started: started})
-
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		handleError(w, started, requestID, http.StatusBadRequest, stepErrMsg, err)
 		return
 	}
 	// check for optional timeout header
