@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io/ioutil"
 	"net/http"
-	//"os"
 	"testing"
 	"time"
 
@@ -46,7 +45,7 @@ func postBatchMultipartMixed(client *http.Client, requestID string, content stri
 
 func TestBatchMultipartMixed(t *testing.T) {
 
-	// TODO move tests to go
+	// TODO move tests to go - probably makes sense to write a go client to RRP first
 
 	go func() {
 		goji.Start("127.0.0.1:8000")
@@ -75,6 +74,6 @@ func TestBatchMultipartMixed(t *testing.T) {
 		}
 	}
 
-	t.Log("TODO: continue moving test scripts to Go")
+	t.Log("TODO: continue moving test scripts to Go - pending writing of go client")
 
 }
